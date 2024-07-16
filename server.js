@@ -1,27 +1,42 @@
 const express = require('express');
 const { MongoClient } = require('mongodb');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const { getQRCode, connectWhatsapp } = require('./index');
+const qrcode = require('qrcode');
+
 const app = express();
 const port = process.env.PORT || 3000;
-const { getQRCode, connectWhatsapp } = require('./index');
 
-const mongoURI = 'mongodb+srv://poco4xprou:8UYHgT7UVB298Tzt@lugi.ecnsu3f.mongodb.net/?retryWrites=true&w=majority&appName=lugi'; // Ganti dengan URI MongoDB Anda
-const dbName = 'lugi'; // Ganti dengan nama database Anda
+const mongoURI = 'mongodb+srv://<username>:OCYxF79bQlyfwYpb@lugi.ecnsu3f.mongodb.net/?retryWrites=true&w=majority&appName=lugi';
+const dbName = 'lugi';
 
-let db;
+let client;
 
-// Hubungkan ke MongoDB
-MongoClient.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(client => {
+async function connectToMongo() {
+  if (!client) {
+    client = new MongoClient(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true });
+    await client.connect();
     console.log('Terhubung ke MongoDB');
-    db = client.db(dbName);
-  })
-  .catch(error => console.error('Kesalahan saat menghubungkan ke MongoDB:', error));
+  }
+  return client.db(dbName);
+}
+
+app.use(compression());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100
+});
+app.use(limiter);
 
 app.get('/', (req, res) => {
   res.send('Bot WhatsApp sedang berjalan!');
 });
 
-const qrcode = require('qrcode');
+app.get('/ping', (req, res) => {
+  res.status(200).send('OK');
+});
 
 app.get('/qr-image', async (req, res) => {
   let attempts = 0;
@@ -43,9 +58,22 @@ app.get('/qr-image', async (req, res) => {
   tryGetQR();
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server berjalan di port ${port}`);
 });
 
-// Jalankan bot WhatsApp
-connectWhatsapp(db);
+(async () => {
+  const db = await connectToMongo();
+  connectWhatsapp(db);
+})();
+
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM diterima. Menutup dengan anggun.');
+  if (client) {
+    await client.close();
+  }
+  server.close(() => {
+    console.log('Proses dihentikan.');
+    process.exit(0);
+  });
+});

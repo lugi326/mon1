@@ -3,6 +3,7 @@ const pino = require('pino');
 const fs = require('fs');
 
 let qrCode = null;
+
 async function connectWhatsapp(db) {
   const auth = await useMultiFileAuthState("sessionDir");
   const socket = makeWASocket({
@@ -10,6 +11,7 @@ async function connectWhatsapp(db) {
     browser: ["DAPABOT", "", ""],
     auth: auth.state,
     logger: pino({ level: "silent" }),
+    msgRetryCounterMap: {}
   });
 
   socket.ev.on("creds.update", auth.saveCreds);
@@ -47,6 +49,7 @@ async function connectWhatsapp(db) {
             jawaban: text,
             waktu: new Date()
           });
+          await db.collection('pesan').createIndex({ waktu: 1 }, { expireAfterSeconds: 86400 });
         } catch (error) {
           console.error('Kesalahan saat memproses pesan:', error);
         }
@@ -56,18 +59,23 @@ async function connectWhatsapp(db) {
 }
 
 async function query(data) {
-  const response = await fetch(
-    "https://geghnreb.cloud.sealos.io/api/v1/prediction/28a6b79e-bd21-436c-ae21-317eee710cb0",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(data)
-    }
-  );
-  const result = await response.json();
-  return result;
+  try {
+    const response = await fetch(
+      "https://geghnreb.cloud.sealos.io/api/v1/prediction/28a6b79e-bd21-436c-ae21-317eee710cb0",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(data)
+      }
+    );
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Kesalahan saat melakukan query:', error);
+    throw error;
+  }
 }
 
 module.exports = { connectWhatsapp, getQRCode: () => qrCode };
